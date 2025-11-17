@@ -12,10 +12,10 @@ jobs:
       - name: Ping backend /health
         run: |
           set -e
-          curl -sS -m 15 https://sophub.onrender.com/health || true
+          curl -sS -m 15 https://amazon-marketing-streams.onrender.com/health || true
 
       - name: Ping backend root
         run: |
           set -e
-          curl -sS -m 15 https://sophub.onrender.com/ || true
+          curl -sS -m 15 https://amazon-marketing-streams.onrender.com/ || true
 
