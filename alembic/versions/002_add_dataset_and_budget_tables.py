@@ -3,16 +3,20 @@ from collections.abc import Sequence
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision: str = "002_add_dataset_and_budget_tables"
-down_revision: str | None = "001_initial_migration"
+revision: str = "002"
+down_revision: str | None = "001"
 branch_labels: Sequence[str] | None = None
 depends_on: Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    stream_enum = postgresql.ENUM(
+        "SP", "SB", "SD", name="streamdatasettype", create_type=False
+    )
     op.add_column(
         "stream_messages",
         sa.Column("dataset_name", sa.String(length=255), nullable=True),
@@ -39,7 +43,7 @@ def upgrade() -> None:
         "budget_usage_events",
         sa.Column("id", sa.BigInteger(), nullable=False),
         sa.Column("stream_message_id", sa.BigInteger(), nullable=False),
-        sa.Column("dataset_type", sa.Enum("SP", "SB", "SD", name="streamdatasettype"), nullable=False),
+        sa.Column("dataset_type", stream_enum, nullable=False),
         sa.Column("dataset_name", sa.String(length=255), nullable=True),
         sa.Column("profile_id", sa.String(length=255), nullable=False),
         sa.Column("campaign_id", sa.String(length=255), nullable=True),
