@@ -11,6 +11,7 @@ from app.models.stream_data import (
     StreamMessage,
     PerformanceData,
     StreamDatasetType,
+    BudgetUsageEvent,
 )
 from app.utils.metrics_calculator import MetricsCalculator
 
@@ -41,6 +42,7 @@ class MessageProcessor:
             dataset_type_str = self._get_first_value(
                 message_body, "datasetType", "dataset_type", "dataset_id"
             )
+            dataset_name = self._normalize_dataset_name(dataset_type_str)
             profile_id = self._get_first_value(
                 message_body, "profileId", "profile_id", "advertiser_id"
             )
@@ -51,7 +53,7 @@ class MessageProcessor:
 
             # Determine dataset type
             try:
-                dataset_type = self._map_dataset_type(dataset_type_str)
+                dataset_type = self._map_dataset_type(dataset_name or dataset_type_str)
             except ValueError:
                 logger.warning(f"Unknown dataset type: {dataset_type_str}")
                 return None
@@ -70,6 +72,7 @@ class MessageProcessor:
             stream_message = StreamMessage(
                 message_id=message_id,
                 dataset_type=dataset_type,
+                dataset_name=dataset_name,
                 profile_id=profile_id,
                 raw_data=json.dumps(message_body),
                 processed=False,
@@ -77,19 +80,26 @@ class MessageProcessor:
             self.db.add(stream_message)
             self.db.flush()
 
-            # Extract performance data
-            performance_data = self._extract_performance_data(
-                stream_message, message_body
-            )
+            result_obj = None
+            if dataset_name and "budget" in dataset_name:
+                result_obj = self._extract_budget_usage(
+                    stream_message, message_body, dataset_name
+                )
+            else:
+                result_obj = self._extract_performance_data(
+                    stream_message, message_body, dataset_name
+                )
 
-            if performance_data:
+            if result_obj:
                 stream_message.processed = True
                 stream_message.processed_at = datetime.utcnow()
                 self.db.commit()
-                logger.info(
-                    f"Processed message {message_id} for campaign {performance_data.campaign_id}"
+                logger.info(f"Processed message {message_id}")
+                return (
+                    result_obj
+                    if isinstance(result_obj, PerformanceData)
+                    else None
                 )
-                return performance_data
             else:
                 self.db.rollback()
                 logger.warning(f"Failed to extract performance data from message {message_id}")
@@ -101,7 +111,10 @@ class MessageProcessor:
             return None
 
     def _extract_performance_data(
-        self, stream_message: StreamMessage, message_body: Dict[str, Any]
+        self,
+        stream_message: StreamMessage,
+        message_body: Dict[str, Any],
+        dataset_name: Optional[str],
     ) -> Optional[PerformanceData]:
         """Extract performance data from message body."""
         try:
@@ -197,6 +210,7 @@ class MessageProcessor:
             performance_data = PerformanceData(
                 stream_message_id=stream_message.id,
                 dataset_type=stream_message.dataset_type,
+                dataset_name=dataset_name,
                 profile_id=stream_message.profile_id,
                 campaign_id=str(campaign_id),
                 campaign_name=campaign_name,
@@ -246,6 +260,107 @@ class MessageProcessor:
             )
             return None
 
+    def _extract_budget_usage(
+        self,
+        stream_message: StreamMessage,
+        message_body: Dict[str, Any],
+        dataset_name: Optional[str],
+    ) -> Optional[BudgetUsageEvent]:
+        """Extract budget usage information."""
+        try:
+            data = (
+                message_body.get("data")
+                or message_body.get("payload")
+                or message_body
+            )
+
+            campaign_id = self._get_first_value(
+                data, "campaignId", "campaign_id", ("campaign", "id")
+            )
+            budget_type = self._get_first_value(
+                data, "budgetType", "budget_type"
+            )
+            budget_name = self._get_first_value(
+                data, "budgetName", "budget_name"
+            )
+            budget_status = self._get_first_value(
+                data, "budgetStatus", "budget_status", "status"
+            )
+            currency = self._get_first_value(
+                data, "currency", "currencyCode", "currency_code"
+            )
+            daily_budget = Decimal(
+                str(
+                    self._get_first_value(
+                        data,
+                        "dailyBudget",
+                        "budget",
+                        "budgetLimit",
+                        "budget_limit",
+                        "maxBudget",
+                        "max_budget",
+                    )
+                    or 0
+                )
+            )
+            budget_consumed = Decimal(
+                str(
+                    self._get_first_value(
+                        data,
+                        "budgetConsumed",
+                        "budget_consumed",
+                        "amountSpent",
+                        "amount_spent",
+                        "spend",
+                    )
+                    or 0
+                )
+            )
+
+            start_date = self._parse_datetime(
+                self._get_first_value(
+                    data,
+                    "time_window_start",
+                    "startDate",
+                    "start_date",
+                    "date",
+                )
+            )
+            end_date = self._parse_datetime(
+                self._get_first_value(
+                    data,
+                    "time_window_end",
+                    "endDate",
+                    "end_date",
+                )
+            )
+
+            budget_event = BudgetUsageEvent(
+                stream_message_id=stream_message.id,
+                dataset_type=stream_message.dataset_type,
+                dataset_name=dataset_name,
+                profile_id=stream_message.profile_id,
+                campaign_id=str(campaign_id) if campaign_id else None,
+                budget_type=budget_type,
+                budget_name=budget_name,
+                budget_status=budget_status,
+                daily_budget=daily_budget,
+                budget_consumed=budget_consumed,
+                currency=currency,
+                start_date=start_date,
+                end_date=end_date,
+                details=json.dumps(data),
+            )
+
+            self.db.add(budget_event)
+            self.db.flush()
+            return budget_event
+        except Exception as exc:
+            logger.error(
+                f"Error extracting budget usage data: {exc}", exc_info=True
+            )
+            return None
+
     @staticmethod
     def _get_first_value(data: Dict[str, Any], *keys):
         """Return first non-null value for provided keys. Supports tuple paths."""
@@ -283,4 +398,21 @@ class MessageProcessor:
 
         # allow direct enum names (SP/SB/SD)
         return StreamDatasetType(normalized.upper())
+
+    @staticmethod
+    def _normalize_dataset_name(raw_value: Optional[str]) -> Optional[str]:
+        """Normalize dataset id/name for consistent comparisons."""
+        if not raw_value:
+            return None
+        return raw_value.strip().lower()
+
+    @staticmethod
+    def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
+        """Parse ISO datetime strings safely."""
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            return None
 

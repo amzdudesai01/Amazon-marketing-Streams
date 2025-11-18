@@ -37,6 +37,7 @@ class StreamMessage(Base):
     id = Column(BigInteger, primary_key=True, index=True)
     message_id = Column(String(255), unique=True, nullable=False, index=True)
     dataset_type = Column(Enum(StreamDatasetType), nullable=False, index=True)
+    dataset_name = Column(String(255), nullable=True, index=True)
     profile_id = Column(String(255), nullable=False, index=True)
     raw_data = Column(Text, nullable=False)  # JSON string
     processed = Column(Boolean, default=False, index=True)
@@ -57,6 +58,7 @@ class PerformanceData(Base):
         BigInteger, ForeignKey("stream_messages.id"), nullable=False, index=True
     )
     dataset_type = Column(Enum(StreamDatasetType), nullable=False, index=True)
+    dataset_name = Column(String(255), nullable=True, index=True)
     profile_id = Column(String(255), nullable=False, index=True)
     campaign_id = Column(String(255), nullable=False, index=True)
     campaign_name = Column(String(500), nullable=True)
@@ -172,4 +174,31 @@ class Alert(Base):
     acknowledged_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class BudgetUsageEvent(Base):
+    """Budget usage data streamed from AMS."""
+
+    __tablename__ = "budget_usage_events"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    stream_message_id = Column(
+        BigInteger, ForeignKey("stream_messages.id"), nullable=False, index=True
+    )
+    dataset_type = Column(Enum(StreamDatasetType), nullable=False, index=True)
+    dataset_name = Column(String(255), nullable=True, index=True)
+    profile_id = Column(String(255), nullable=False, index=True)
+    campaign_id = Column(String(255), nullable=True, index=True)
+    budget_type = Column(String(255), nullable=True)
+    budget_name = Column(String(500), nullable=True)
+    budget_status = Column(String(255), nullable=True)
+    daily_budget = Column(Numeric(12, 2), default=Decimal("0.00"))
+    budget_consumed = Column(Numeric(12, 2), default=Decimal("0.00"))
+    currency = Column(String(10), nullable=True)
+    start_date = Column(DateTime, nullable=True, index=True)
+    end_date = Column(DateTime, nullable=True)
+    details = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    stream_message = relationship("StreamMessage")
 

@@ -5,6 +5,7 @@ from app.models.stream_data import (
     PerformanceAggregate,
     Alert,
     StreamDatasetType,
+    BudgetUsageEvent,
 )
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "PerformanceAggregate",
     "Alert",
     "StreamDatasetType",
+    "BudgetUsageEvent",
 ]
 

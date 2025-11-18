@@ -11,6 +11,7 @@ class StreamMessageCreate(BaseModel):
 
     message_id: str
     dataset_type: str  # SP, SB, or SD
+    dataset_name: Optional[str] = None
     profile_id: str
     raw_data: str
 
@@ -21,6 +22,7 @@ class StreamMessageResponse(BaseModel):
     id: int
     message_id: str
     dataset_type: str
+    dataset_name: Optional[str]
     profile_id: str
     processed: bool
     created_at: datetime
@@ -34,6 +36,7 @@ class PerformanceDataCreate(BaseModel):
 
     stream_message_id: int
     dataset_type: str
+    dataset_name: Optional[str] = None
     profile_id: str
     campaign_id: str
     campaign_name: Optional[str] = None
@@ -69,6 +72,7 @@ class PerformanceDataResponse(BaseModel):
     acos: Optional[Decimal]
     roas: Optional[Decimal]
     conversion_rate: Optional[Decimal]
+    dataset_name: Optional[str]
     start_date: datetime
     end_date: datetime
     created_at: datetime
